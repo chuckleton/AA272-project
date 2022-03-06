@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "gnss-running-filter"
+version = "0.1.0"
+description = ""
+authors = ["Danny Kolano <dkolano2@gmail.com>"]
+readme = "README.md"
+packages = [{include = "gnss_running_filter"}]
+
+[tool.poetry.dependencies]
+python = "3.10"
+numpy = "^1.22.2"
+pandas = "^1.4.1"
+scipy = "^1.8.0"
+pyquaternion = "^0.9.9"
+attrs = "^21.4.0"
+matplotlib = "^3.5.1"
+magnetic-field-calculator = "^1.0.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

@@ -1,23 +1,33 @@
 import pandas as pd
 import numpy as np
 import attr
+from enum import Enum
 
-@attr.s
-class Reading:
+class ReadingType(Enum):
     ACCEL_GYRO = 0
     ACCEL_GYRO_MAG = 1
     ACCEL_GYRO_GPS = 2
     ACCEL_GYRO_MAG_GPS = 3
-    time: int = attr.ib(default=0)
+
+@attr.s
+class Reading:
+    """A single set of sensor readings at a given timestamp
+
+       type - The components present in the reading as a ReadingType enum
+    """
+    timestamp: int = attr.ib(default=0)
     accel: np.ndarray = attr.ib(default=np.zeros((3, 1)))
     gyro: np.ndarray = attr.ib(default=np.zeros((3, 1)))
     mag: np.ndarray = attr.ib(default=np.zeros((3, 1)))
     gps: np.ndarray = attr.ib(default=np.zeros((3, 1)))
-    type: int = attr.ib(default=ACCEL_GYRO)
+    type: int = attr.ib(default=ReadingType.ACCEL_GYRO)
 
 
 @attr.s
 class Readings:
+    """Class for holding and accessing all the sensor readings
+       for a given time period.
+    """
     imu_fname: str = attr.ib(default=None)
     gps_fname: str = attr.ib(default=None)
     start_time: int = attr.ib(default=None)
@@ -40,29 +50,63 @@ class Readings:
             self.gps = get_sensor_readings(
                 self.gps_fname, self.start_time, self.duration)
 
-            # We want only data starting after we have GPS signal
-            self.start_time = self.gps.iloc[0]['UNIX Epoch timestamp-utc']-1
+            # We want only data starting after we have GPS signal, but need enough to get mag data
+            # before we start for initializing orientation.
+            self.start_time = self.gps.iloc[0]['UNIX Epoch timestamp-utc']-25
+            self.imu = get_imu_readings(self.imu_fname, self.start_time, self.duration)
+            self.start_time = self.imu['mag'].iloc[0]['UNIX Epoch timestamp-utc']-1
             self.imu = get_imu_readings(self.imu_fname, self.start_time, self.duration)
             self.time = self.start_time
             self.imu_loc = 0
             self.gps_loc = 0
             self.mag_loc = 0
+            self.last_mag_reading = self.get_imu_reading('mag', 0)
 
     def get_next_reading_time(self):
+        """Get the next timestamp with accel and gyro data
+
+        Returns:
+            int: next timestamp with accel and gyro data
+        """
         if self.time - self.start_time >= self.duration:
             return None
         next_reading_time = self.imu['accel'].iloc[self.imu_loc]['UNIX Epoch timestamp-utc']
         return next_reading_time
 
     def check_gps_data(self, time: int):
+        """Check if there is new GPS data available at the given time
+
+        Args:
+            time (int): timestamp to check for GPS data
+
+        Returns:
+            bool: new GPS data available
+        """
         next_gps_time = self.gps.iloc[self.gps_loc]['UNIX Epoch timestamp-utc']
         return next_gps_time <= time
 
     def check_mag_data(self, time: int):
+        """Check if there is new Magnetometer data available at the given time
+
+        Args:
+            time (int): timestamp to check for mag data
+
+        Returns:
+            bool: new mag data available
+        """
         next_mag_time = self.imu['mag'].iloc[self.mag_loc]['UNIX Epoch timestamp-utc']
         return next_mag_time <= time
 
-    def get_imu_reading(self, sensor, index):
+    def get_imu_reading(self, sensor: str, index: int):
+        """Get a single IMU reading
+
+        Args:
+            sensor (str): The sensor to get the reading from ['accel', 'gyro', 'mag']
+            index (int): Dataframe index of the reading
+
+        Returns:
+            np.ndarray: (3,1) numpy array of the reading
+        """
         reading = self.imu[sensor].iloc[index]
         reading = np.array([reading['x-axis'],
                             reading['y-axis'],
@@ -70,6 +114,11 @@ class Readings:
         return reading
 
     def get_next_reading(self):
+        """Get the next available reading
+
+        Returns:
+            Reading: next available reading
+        """
         if self.time - self.start_time >= self.duration:
             return None
 
@@ -81,29 +130,30 @@ class Readings:
         accel_reading = self.get_imu_reading('accel', self.imu_loc)
         self.imu_loc += 1
 
-        type = Reading.ACCEL_GYRO
+        type = ReadingType.ACCEL_GYRO
 
+        gps_reading = None
         if has_gps_data:
             gps_reading = self.gps.iloc[self.gps_loc]
             gps_reading = np.array([gps_reading['lat'],
                                     gps_reading['lon'],
                                     gps_reading['alt']]).reshape((3, 1))
             self.gps_loc += 1
-            type = Reading.ACCEL_GYRO_GPS
+            type = ReadingType.ACCEL_GYRO_GPS
             if has_mag_data:
-                type = Reading.ACCEL_GYRO_MAG_GPS
-            else:
-                type = Reading.ACCEL_GYRO_GPS
+                type = ReadingType.ACCEL_GYRO_MAG_GPS
             self.gps_loc += 1
 
+        mag_reading = self.last_mag_reading
         if has_mag_data:
             mag_reading = self.get_imu_reading('mag', self.mag_loc)
+            self.last_mag_reading = mag_reading
             if not has_gps_data:
-                type = Reading.ACCEL_GYRO_MAG
+                type = ReadingType.ACCEL_GYRO_MAG
             self.mag_loc += 1
 
         reading = Reading(
-            time=next_reading_time,
+            timestamp=next_reading_time,
             accel=accel_reading,
             gyro=gyro_reading,
             mag=mag_reading,
@@ -117,6 +167,16 @@ class Readings:
 
 
 def get_sensor_readings(fname: str, start_time: int, duration: int):
+    """Get a dataframe of sensor readings from a file
+
+    Args:
+        fname (str): filename/path
+        start_time (int): UTC (ms) time of first reading
+        duration (int): UTC (ms) time duration to read
+
+    Returns:
+        pd.DataFrame: sensor readings dataframe
+    """
     readings = pd.read_csv(fname)
     readings.drop_duplicates(subset=['UNIX Epoch timestamp-utc'], inplace=True)
     readings = readings[(readings['UNIX Epoch timestamp-utc'] > start_time)
@@ -126,6 +186,17 @@ def get_sensor_readings(fname: str, start_time: int, duration: int):
     return readings
 
 def get_imu_readings(imu_fname: str, start_time: int, duration: int):
+    """Get the IMU readings from their files
+
+    Args:
+        imu_fname (str): Base filepath/name of IMU files
+        start_time (int): UTC (ms) time of first reading
+        duration (int): UTC (ms) time duration to read
+
+    Returns:
+        dict: dictionary of IMU readings as pd.DataFrames
+                {'accel', 'gyro', 'mag'}
+    """
     mag_readings = get_sensor_readings(
         imu_fname + '-mag.txt', start_time, duration)
     accel_readings = get_sensor_readings(

@@ -98,7 +98,7 @@ class Accel:
             return False
         g_direction = accel_data / accel_mag
         self.g = (g_direction * self.g_mag).reshape((3, 1))
-        # self.velocity = np.zeros_like(self.velocity)
+        self.velocity = np.zeros_like(self.velocity)
         return True
 
     def compute_mag_orientation(self, mag_data: np.ndarray):
@@ -182,11 +182,13 @@ if __name__ == "__main__":
 
     times = np.zeros(len(gyro_readings)+1)
     angles = np.zeros((len(gyro_readings)+1, 3))
+    quaternions = np.zeros((len(gyro_readings)+1, 4))
     positions = np.zeros((len(gyro_readings)+1, 3))
     velocities = np.zeros((len(gyro_readings)+1, 3))
     initial_time = gyro_readings.iloc[0]['UNIX Epoch timestamp-utc']
     times[0] = 0
     angles[0] = gyro.as_euler()
+    quaternions[0] = gyro.orientation.elements
     positions[0] = accel.position[:, 0]
     velocities[0] = accel.velocity[:, 0]
     print(gyro_readings)
@@ -213,12 +215,15 @@ if __name__ == "__main__":
                                 mag_readings.iloc[mag_ind]['y-axis'],
                                 mag_readings.iloc[mag_ind]['z-axis']])
             mag_ind += 1
-            if g_updated and row['UNIX Epoch timestamp-utc'] - last_mag_update > 500:
+            if g_updated and row['UNIX Epoch timestamp-utc'] - last_mag_update > 1:
                 accel.compute_mag_orientation(mag_data)
                 initial_orientation = accel.mag_orientation
-                # gyro.orientation = initial_orientation
+                gyro.orientation = initial_orientation
                 last_mag_update = row['UNIX Epoch timestamp-utc']
+        if gyro.orientation.elements[0] < 0:
+            gyro.orientation = -gyro.orientation
         angles[i+1] = gyro.as_euler()
+        quaternions[i+1] = gyro.orientation.elements
         positions[i+1] = accel.position[:, 0]
         velocities[i+1] = accel.velocity[:, 0]
         times[i+1] = (row['UNIX Epoch timestamp-utc'] - initial_time) / 1000.0
@@ -237,4 +242,11 @@ if __name__ == "__main__":
     plt.figure(figsize=(10, 10))
     plt.axis('equal')
     plt.plot(positions[:, 0], positions[:, 1], label='Position')
+
+    plt.figure(figsize=(10, 10))
+    plt.plot(times, quaternions[:, 0], label='w')
+    plt.plot(times, quaternions[:, 1], label='x')
+    plt.plot(times, quaternions[:, 2], label='y')
+    plt.plot(times, quaternions[:, 3], label='z')
+    plt.legend()
     plt.show()

@@ -7,65 +7,6 @@ import matplotlib.pyplot as plt
 from gnss_running_filter.gyro import Gyro
 from gnss_running_filter.mag import Mag
 
-
-def generate_A(timestep: float, Cstop: int = 0):
-    A = np.zeros((10,10))
-    A[:3, :3] = np.eye(3)
-    A[3:6, :3] = np.eye(3) * timestep
-    A[3:6, 3:6] = np.eye(3) * Cstop
-    return A
-
-def generate_B(timestep: float):
-    B = np.zeros((10,3))
-    B[:3, :] = np.eye(3) * timestep**2 / 2
-    B[3:6, :] = np.eye(3) * timestep
-    return B
-
-def generate_C(q):
-    C = np.zeros((10,1))
-    C[-4:] = q.elements
-
-def lat_lon_2_xy(lat0, lon0, lat1, lon1):
-    a = 6378136.6
-    c = 6356751.9
-    phi = np.pi / 2 - (lat0 + lat1) / 2.0 * np.pi / 180.0
-    coeff = np.sqrt(1/((np.sin(phi)/a)**2 + (np.cos(phi)/c)**2))
-    x = np.cos(phi)*coeff*(lon1-lon0) * np.pi / 180.0
-    y = coeff*(lat1-lat0) * np.pi / 180.0
-    return np.array([x,y]).reshape((2,1))
-
-def generate_H():
-    H = np.zeros((2,10))
-    H[0,0] = 1
-    H[1,1] = 1
-    return H
-
-def compute_Sigma_hat(A, Sigma, N):
-    return A @ Sigma @ A.T + N
-
-def compute_K(Sigma_hat, H, R):
-    return Sigma_hat @ H.T @ np.linalg.inv(H @ Sigma_hat @ H.T + R)
-
-def compute_Sigma(K, H, Sigma_hat, R):
-    return (np.eye(H.shape[0]) - K @ H) @ Sigma_hat @ (np.eye(H.shape[0]) - K @ H).T + R
-
-def compute_X_hat(X, a: np.ndarray, q: np.ndarray, timestep: float, Cstop: int = 0):
-    A = generate_A(timestep, Cstop)
-    B = generate_B(timestep)
-    C = generate_C(q)
-    return A @ X + B @ a + C
-
-def compute_X(X_hat, K, m):
-    H = generate_H()
-    return X_hat + K @ (m - H @ X_hat)
-
-def filter_GNSS(X, Sigma, R, a, q, m, timestep, Cstop=0):
-    X_hat = compute_X_hat(X, a, q, timestep, Cstop)
-    Sigma_hat = compute_Sigma_hat(generate_A(timestep, Cstop), Sigma, R)
-    K = compute_K(Sigma_hat, generate_H(), R)
-    X_filtered = compute_X(X_hat, K, m)
-    return X_filtered, Sigma_hat, K
-
 @attr.s
 class Accel:
     position: np.ndarray = attr.ib(default=np.zeros((3, 1)))
@@ -81,41 +22,53 @@ class Accel:
         g = np.array([0, 0, -9.81]).reshape((3, 1))  # gravity vector
         Cns = self.gyro.orientation.rotation_matrix
         a = (np.matmul(Cns, accel_data.reshape((3, 1))) - g)
-        a_offset = np.array([-5, 4, -11]).reshape((3, 1))
-        a += a_offset
-        if g_updated:
-            print('g updated', self.g)
+        # print('Accel Update:\nposition:', self.position, '\nVelocity: ', self.velocity, '\nTimestep: ', timestep, '\na: ', a)
         self.position = self.position + timestep * self.velocity + \
             (timestep**2) * 0.5 * a
         self.velocity = self.velocity + timestep * a
         return g_updated
 
-    def compute_g(self, accel_data: np.ndarray):
+    def compute_g(self, accel_data: np.ndarray, always_compute: bool = False):
         accel_mag = np.linalg.norm(accel_data)
 
         # Only compute g if we are in right acceleration range
-        if accel_mag < 0.95*self.g_mag or accel_mag > 1.05*self.g_mag:
+        # (or always compute is True)
+        if ((accel_mag < 0.95*self.g_mag
+            or accel_mag > 1.05*self.g_mag)
+            and not always_compute):
             return False
+
         g_direction = accel_data / accel_mag
         self.g = (g_direction * self.g_mag).reshape((3, 1))
-        self.velocity = np.zeros_like(self.velocity)
+        # self.velocity = np.zeros_like(self.velocity)
         return True
 
     def compute_mag_orientation(self, mag_data: np.ndarray):
-        nav_vecs = np.empty((2, 3))
-        body_vecs = np.empty((2, 3))
+        # nav_vecs = np.empty((2, 3))
+        # body_vecs = np.empty((2, 3))
 
-        body_vecs[0] = mag_data/np.linalg.norm(mag_data)
-        nav_vecs[0] = mag.mag_field_orientation
-        body_vecs[1] = self.g[:, 0]/np.linalg.norm(self.g[:, 0])
-        nav_vecs[1] = np.array([0, 0, -1])
+        # body_vecs[0] = (mag_data/np.linalg.norm(mag_data))[:,0]
+        # nav_vecs[0] = self.mag.mag_field_orientation
+        # body_vecs[1] = (self.g/np.linalg.norm(self.g))[:, 0]
+        # nav_vecs[1] = np.array([0, 0, -1])
 
-        print('body_vecs: ', body_vecs)
-        print('nav_vecs: ', nav_vecs)
+        # print('body_vecs: ', body_vecs)
+        # print('nav_vecs: ', nav_vecs)
 
-        self.mag_orientation = R.align_vectors(nav_vecs, body_vecs)[0]
+        # # self.mag_orientation = R.align_vectors(nav_vecs, body_vecs)[0]
         # self.mag_orientation = R.align_vectors(nav_vecs[1].reshape((1,3)), body_vecs[1].reshape((1,3)))[0]
-        quat = self.mag_orientation.as_quat()
+        # quat = self.mag_orientation.as_quat()
+        # self.mag_orientation = Quaternion(
+        #     np.concatenate(([quat[-1]], quat[:-1])))
+
+        a = (self.g/np.linalg.norm(self.g))[:, 0]
+        m = (mag_data/np.linalg.norm(mag_data))[:, 0]
+        phi = np.arctan2(a[1], a[2])
+        theta = np.arctan2(-a[0], a[1]*np.sin(phi) + a[2]*np.cos(phi))
+        psi = np.arctan2(m[1]*np.cos(phi) + m[0]*np.sin(phi)*np.sin(theta) - m[2]*np.sin(phi)*np.cos(theta),
+                         m[0]*np.cos(theta) - m[2]*np.cos(theta))
+        psi -= np.pi/2 + 0.2289290784
+        quat = R.from_euler('xyz', [phi, theta, psi]).as_quat()
         self.mag_orientation = Quaternion(
             np.concatenate(([quat[-1]], quat[:-1])))
         return self.mag_orientation

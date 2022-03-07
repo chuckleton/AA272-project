@@ -16,6 +16,7 @@ class Reading:
        type - The components present in the reading as a ReadingType enum
     """
     timestamp: int = attr.ib(default=0)
+    timestep: float = attr.ib(default=0)
     accel: np.ndarray = attr.ib(default=np.zeros((3, 1)))
     gyro: np.ndarray = attr.ib(default=np.zeros((3, 1)))
     mag: np.ndarray = attr.ib(default=np.zeros((3, 1)))
@@ -52,15 +53,25 @@ class Readings:
 
             # We want only data starting after we have GPS signal, but need enough to get mag data
             # before we start for initializing orientation.
-            self.start_time = self.gps.iloc[0]['UNIX Epoch timestamp-utc']-25
-            self.imu = get_imu_readings(self.imu_fname, self.start_time, self.duration)
-            self.start_time = self.imu['mag'].iloc[0]['UNIX Epoch timestamp-utc']-1
-            self.imu = get_imu_readings(self.imu_fname, self.start_time, self.duration)
+            # This is a really dumb way of doing it, but it works.
+            mag_reading_delay = 25
+            self.start_time = self.gps.iloc[0]['UNIX Epoch timestamp-utc'] - \
+                mag_reading_delay
+            self.imu = get_imu_readings(
+                self.imu_fname, self.start_time, mag_reading_delay)
+            nearest_mag_time = self.imu['mag'].iloc[0]['UNIX Epoch timestamp-utc']-1
+            self.imu = get_imu_readings(
+                self.imu_fname, nearest_mag_time, mag_reading_delay)
+            self.last_mag_reading = self.get_imu_reading('mag', 0)
+            self.start_time += mag_reading_delay - 1
+            self.imu = get_imu_readings(
+                self.imu_fname, self.start_time, self.duration)
+
             self.time = self.start_time
             self.imu_loc = 0
             self.gps_loc = 0
             self.mag_loc = 0
-            self.last_mag_reading = self.get_imu_reading('mag', 0)
+            self.num_readings = len(self.imu['accel'])
 
     def get_next_reading_time(self):
         """Get the next timestamp with accel and gyro data
@@ -68,8 +79,6 @@ class Readings:
         Returns:
             int: next timestamp with accel and gyro data
         """
-        if self.time - self.start_time >= self.duration:
-            return None
         next_reading_time = self.imu['accel'].iloc[self.imu_loc]['UNIX Epoch timestamp-utc']
         return next_reading_time
 
@@ -82,6 +91,8 @@ class Readings:
         Returns:
             bool: new GPS data available
         """
+        if self.gps_loc >= len(self.gps):
+            return False
         next_gps_time = self.gps.iloc[self.gps_loc]['UNIX Epoch timestamp-utc']
         return next_gps_time <= time
 
@@ -94,6 +105,8 @@ class Readings:
         Returns:
             bool: new mag data available
         """
+        if self.mag_loc >= len(self.imu['mag']):
+            return False
         next_mag_time = self.imu['mag'].iloc[self.mag_loc]['UNIX Epoch timestamp-utc']
         return next_mag_time <= time
 
@@ -113,22 +126,29 @@ class Readings:
                             reading['z-axis']]).reshape((3, 1))
         return reading
 
-    def get_next_reading(self):
+    def get_next_reading(self, advance_time: bool = True):
         """Get the next available reading
+
+        Args:
+            advance_time (bool): Move to next timestep after reading
 
         Returns:
             Reading: next available reading
         """
-        if self.time - self.start_time >= self.duration:
+        if self.imu_loc >= self.num_readings:
+            return None
+        if self.imu_loc >= len(self.imu['gyro']):
             return None
 
-        next_reading_time = self.get_next_reading_time()
-        has_gps_data = self.check_gps_data(next_reading_time)
-        has_mag_data = self.check_mag_data(next_reading_time)
+        self.time = self.get_next_reading_time()
+        has_gps_data = self.check_gps_data(self.time)
+        has_mag_data = self.check_mag_data(self.time)
 
         gyro_reading = self.get_imu_reading('gyro', self.imu_loc)
         accel_reading = self.get_imu_reading('accel', self.imu_loc)
-        self.imu_loc += 1
+        timestep = self.imu['accel'].iloc[self.imu_loc]['timestep']
+        if advance_time:
+            self.imu_loc += 1
 
         type = ReadingType.ACCEL_GYRO
 
@@ -138,11 +158,11 @@ class Readings:
             gps_reading = np.array([gps_reading['lat'],
                                     gps_reading['lon'],
                                     gps_reading['alt']]).reshape((3, 1))
-            self.gps_loc += 1
             type = ReadingType.ACCEL_GYRO_GPS
             if has_mag_data:
                 type = ReadingType.ACCEL_GYRO_MAG_GPS
-            self.gps_loc += 1
+            if advance_time:
+                self.gps_loc += 1
 
         mag_reading = self.last_mag_reading
         if has_mag_data:
@@ -150,10 +170,12 @@ class Readings:
             self.last_mag_reading = mag_reading
             if not has_gps_data:
                 type = ReadingType.ACCEL_GYRO_MAG
-            self.mag_loc += 1
+            if advance_time:
+                self.mag_loc += 1
 
         reading = Reading(
-            timestamp=next_reading_time,
+            timestamp=self.time,
+            timestep=timestep,
             accel=accel_reading,
             gyro=gyro_reading,
             mag=mag_reading,
@@ -209,17 +231,18 @@ def get_imu_readings(imu_fname: str, start_time: int, duration: int):
     # g_mag = accel_readings['magnitude'].mean()
     # print('g_mag: ', g_mag)
 
-    accel_readings['z-axis'] *= -1
+    # accel_readings['z-axis'] *= -1
+    # mag_readings['z-axis'] *= -1
 
     # Accel offsets
     accel_readings['x-axis'] += 0.0
-    accel_readings['y-axis'] += -0.0
+    accel_readings['y-axis'] += 2.3
     accel_readings['z-axis'] += -0.0
 
     # Magnetometer Offsets
-    mag_readings['x-axis'] += 0
-    mag_readings['y-axis'] += 0
-    mag_readings['z-axis'] += 0
+    mag_readings['x-axis'] += 0.0
+    mag_readings['y-axis'] += 0.0
+    mag_readings['z-axis'] -= 0.0
 
     return {'accel': accel_readings,
             'gyro': gyro_readings,

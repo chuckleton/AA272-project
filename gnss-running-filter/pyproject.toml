@@ -15,6 +15,7 @@ pyquaternion = "^0.9.9"
 attrs = "^21.4.0"
 matplotlib = "^3.5.1"
 magnetic-field-calculator = "^1.0.2"
+tqdm = "^4.63.0"
 
 
 [build-system]

@@ -29,6 +29,7 @@ class Mag:
 
     def get_mag_field_unit_vector(self, lat, long, alt, date):
         mag_field = self.get_mag_field(lat, long, alt, date)
+        print(f'Mag Field: {mag_field}')
         return mag_field / np.linalg.norm(mag_field)
 
     def get_mag_field(self, lat, long, alt, date):

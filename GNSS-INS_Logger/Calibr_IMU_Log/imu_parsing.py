@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 # Replace fname here with the name of the file you want to parse
-fname = 'SM-G950U_IMU_20220305023351'
+fname = 'SM-G950U_IMU_20220224190043'
 
 
 if __name__ == '__main__':

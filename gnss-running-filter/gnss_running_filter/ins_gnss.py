@@ -11,7 +11,7 @@ import pandas as pd
 from matplotlib import cm, colors
 import matplotlib.pyplot as plt
 
-path = 'Track'
+path = 'Lake'
 write_csv = True
 
 if path == 'Track':

@@ -13,7 +13,7 @@ The python library is created with poetry. With poetry installed, you can run th
 poetry install
 ```
 
-The main function is in the file `gnss-running-filter/gnss_running_filter/ins_gnss.py`. The variable at the top should be changed to match local setup. To run, use the following command:
+The main function is in the file `gnss-running-filter/gnss_running_filter/ins_gnss.py`. The variables at the top should be changed to match local setup. To run, use the following command:
 
 ```python
 poetry run python path/to/ins_gnss.py

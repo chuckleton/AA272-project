@@ -131,6 +131,14 @@ optional = false
 python-versions = ">=3.7"
 
 [[package]]
+name = "pygeodesy"
+version = "22.3.3"
+description = "Pure Python geodesy tools"
+category = "main"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "pyparsing"
 version = "3.0.7"
 description = "Python parsing module"
@@ -237,7 +245,7 @@ telegram = ["requests"]
 [metadata]
 lock-version = "1.1"
 python-versions = "3.10"
-content-hash = "b3bcb9200a4946e841138a86255234306753376d92302c6af96a188f5e343f4c"
+content-hash = "596374a05016303da2f505f8c18fc32e14a83bd42e8d8d56482944ed7533a5ca"
 
 [metadata.files]
 attrs = [
@@ -427,6 +435,10 @@ pillow = [
     {file = "Pillow-9.0.1-pp37-pypy37_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6295f6763749b89c994fcb6d8a7f7ce03c3992e695f89f00b741b4580b199b7e"},
     {file = "Pillow-9.0.1-pp38-pypy38_pp73-win_amd64.whl", hash = "sha256:a9f44cd7e162ac6191491d7249cceb02b8116b0f7e847ee33f739d7cb1ea1f70"},
     {file = "Pillow-9.0.1.tar.gz", hash = "sha256:6c8bc8238a7dfdaf7a75f5ec5a663f4173f8c367e5a39f87e720495e1eed75fa"},
+]
+pygeodesy = [
+    {file = "PyGeodesy-22.3.3-py2.py3-none-any.whl", hash = "sha256:75cc0c2b122b03c235208e154e4ee53cbaee30c557c5e58213b60542991b3955"},
+    {file = "PyGeodesy-22.3.3.zip", hash = "sha256:7dc6905d59c2a5424e920ed6402393bd6f7b03c8366f50a0a1b1d065642b50b2"},
 ]
 pyparsing = [
     {file = "pyparsing-3.0.7-py3-none-any.whl", hash = "sha256:a6c06a88f252e6c322f65faf8f418b16213b51bdfaece0524c1c1bc30c63c484"},

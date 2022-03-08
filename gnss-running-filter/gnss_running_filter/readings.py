@@ -155,9 +155,9 @@ class Readings:
         gps_reading = None
         if has_gps_data:
             gps_reading = self.gps.iloc[self.gps_loc]
-            gps_reading = np.array([gps_reading['lat'],
-                                    gps_reading['lon'],
-                                    gps_reading['alt']]).reshape((3, 1))
+            gps_reading = np.array([gps_reading['x'],
+                                    gps_reading['y'],
+                                    gps_reading['z']]).reshape((3, 1))
             type = ReadingType.ACCEL_GYRO_GPS
             if has_mag_data:
                 type = ReadingType.ACCEL_GYRO_MAG_GPS

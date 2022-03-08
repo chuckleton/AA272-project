@@ -12,28 +12,28 @@ from matplotlib import cm, colors
 import matplotlib.pyplot as plt
 
 path = 'Track'
-write_csv = False
+write_csv = True
 
 if path == 'Track':
     IMU_fpath = "C:\\Users\\dkolano\\OneDrive - Agile Space Industries\\Documents\\Homework\\Global Positioning Systems\\Project\\GNSS-INS_Logger\\Calibr_IMU_Log\\SM-G950U_IMU_20220223171411"
-    GPS_fpath = "C:\\Users\\dkolano\\OneDrive - Agile Space Industries\\Documents\\Homework\\Global Positioning Systems\\Project\\WLS_LLA\\WLS_LLA_track.csv"
+    GPS_fpath = "C:\\Users\\dkolano\\OneDrive - Agile Space Industries\\Documents\\Homework\\Global Positioning Systems\\Project\\WLS_LLA\\WLS_LLA_track_xy.csv"
 
 
 if path == 'Lake':
     IMU_fpath = "C:\\Users\\dkolano\\OneDrive - Agile Space Industries\\Documents\\Homework\\Global Positioning Systems\\Project\\GNSS-INS_Logger\\Calibr_IMU_Log\\SM-G950U_IMU_20220224190043"
-    GPS_fpath = "C:\\Users\\dkolano\\OneDrive - Agile Space Industries\\Documents\\Homework\\Global Positioning Systems\\Project\\WLS_LLA\\WLS_LLA_lake.csv"
+    GPS_fpath = "C:\\Users\\dkolano\\OneDrive - Agile Space Industries\\Documents\\Homework\\Global Positioning Systems\\Project\\WLS_LLA\\WLS_LLA_lake_xy.csv"
 
 
 if path == 'Random':
     IMU_fpath = "C:\\Users\\dkolano\\OneDrive - Agile Space Industries\\Documents\\Homework\\Global Positioning Systems\\Project\\GNSS-INS_Logger\\Calibr_IMU_Log\\SM-G950U_IMU_20220223174001"
-    GPS_fpath = "C:\\Users\\dkolano\\OneDrive - Agile Space Industries\\Documents\\Homework\\Global Positioning Systems\\Project\\WLS_LLA\\WLS_LLA_rand_path.csv"
+    GPS_fpath = "C:\\Users\\dkolano\\OneDrive - Agile Space Industries\\Documents\\Homework\\Global Positioning Systems\\Project\\WLS_LLA\\WLS_LLA_rand_path_xy.csv"
 
 # Note you can just make duration huge and it will run the whole thing
 # Equivalently you can set duration = None and it will also run until the end of the file
 
 if path == 'Track':
-    start_time = 1645654491442+261000
-    duration = 3000
+    start_time = 1645654491442+1000
+    duration = None
 
 if path == 'Lake':
     start_time = 1645747242435+1000
@@ -43,9 +43,9 @@ if path == 'Random':
     start_time = 1645656032432+1000
     duration = None
 
-PROCESS_NOISE_COEFFICIENT = 0.00025
+PROCESS_NOISE_COEFFICIENT_unused = 0.00025
 GPS_MEASUREMENT_NOISE_COEFFICIENT = 10.0
-FREQ_MEASUREMENT_NOISE_COEFFICIENT = 1.0
+FREQ_MEASUREMENT_NOISE_COEFFICIENT_unused = 1.5
 
 def lat_lon_2_xy(lat0: float, lon0: float, lat1: float, lon1: float):
     """Convert latitude and longitude to x and y
@@ -81,7 +81,7 @@ def xy_2_lat_lon(x: float, y: float, lat0: float, lon0: float):
     """
     a = 6378136.6
     c = 6356751.9
-    phi = np.pi / 2 - (2*lat0 + y / a) * np.pi / 180.0
+    phi = np.pi / 2 - (2*lat0 + np.rad2deg(y / a)) * np.pi / 180.0
     coeff = np.sqrt(1/((np.sin(phi)/a)**2 + (np.cos(phi)/c)**2))
     lon = x * (180.0 / np.pi) / np.cos(phi) / coeff + lon0
     lat = y * (180.0 / np.pi) / coeff + lat0
@@ -284,7 +284,8 @@ def filter_GNSS(X: np.ndarray, Sigma: np.ndarray, R: np.ndarray,
         K = None
     return X_filtered, Sigma, K
 
-def run_Kalman_filter(readings: Readings, imu: IMU):
+
+def run_Kalman_filter(readings: Readings, imu: IMU, PROCESS_NOISE_COEFFICIENT: float, FREQ_MEASUREMENT_NOISE_COEFFICIENT: float):
     """Run EKF on the given readings and IMU data.
 
     Args:
@@ -309,8 +310,10 @@ def run_Kalman_filter(readings: Readings, imu: IMU):
     # Get initial position from first GPS reading
     initial_pos = first_reading.gps
     lat0, lon0 = initial_pos[0], initial_pos[1]
+    print('Initial Lat Lon: ', lat0, lon0)
 
     X0 = np.zeros((10, 1))
+    X0[:3] = initial_pos
     X0[-4:] = initial_orientation.elements.reshape((4, 1))
 
     accel_mag_prev = np.zeros(800)
@@ -330,6 +333,7 @@ def run_Kalman_filter(readings: Readings, imu: IMU):
     timestamps = np.zeros(readings.num_readings)
     gps_timestamps = np.zeros(len(readings.gps))
     positions = np.zeros((readings.num_readings, 3))
+    gps_positions = np.zeros((len(readings.gps), 2), dtype=np.float64)
     coords = np.zeros((len(readings.gps), 2), dtype=np.float64)
     all_positions = np.zeros((readings.num_readings, 3))
     velocities = np.zeros((readings.num_readings, 3))
@@ -341,6 +345,7 @@ def run_Kalman_filter(readings: Readings, imu: IMU):
 
     # Initialize all of the saved data
     positions[0] = X[:3,0]
+    gps_positions[0] = X[:2,0]
     coords[0] = xy_2_lat_lon(positions[0][0], positions[0][1], lat0, lon0)[:, 0]
     all_positions[0] = X[:3, 0]
     velocities[0] = X[3:6,0]
@@ -378,7 +383,8 @@ def run_Kalman_filter(readings: Readings, imu: IMU):
 
         # Convert gps to x, y from lat and long
         if gps is not None:
-            gps = lat_lon_2_xy(lat0, lon0, gps[0], gps[1])
+            # gps = lat_lon_2_xy(lat0, lon0, gps[0], gps[1])
+            gps = np.array([gps[0], gps[1]]).reshape((2, 1))
 
         # Get timestep
         timestep = reading.timestep
@@ -422,6 +428,7 @@ def run_Kalman_filter(readings: Readings, imu: IMU):
             gps_timestamps[gps_ind] = reading.timestamp
             coords[gps_ind] = xy_2_lat_lon(
                 positions[reading_ind][0], positions[reading_ind][1], lat0, lon0)[:, 0]
+            gps_positions[gps_ind] = X[:2, 0]
             gps_ind += 1
         else:
             wls_positions[reading_ind] = wls_positions[reading_ind - 1]
@@ -443,38 +450,54 @@ def run_Kalman_filter(readings: Readings, imu: IMU):
         Sigma = Sigma_new
 
     pbar.close()
-    return timestamps, positions, velocities, orientations, wls_positions, all_positions, v_freqs, gps_timestamps, coords, accel_mags, gyro_readings
+    return timestamps, positions, gps_positions, velocities, orientations, wls_positions, all_positions, v_freqs, gps_timestamps, coords, accel_mags, gyro_readings
 
 
 def main():
-    # Load the data
-    readings = Readings(IMU_fpath, GPS_fpath,
-                        start_time=start_time, duration=duration)
+    PROCESS_NOISE_COEFFICIENTs = np.linspace(0.00005, 0.00075, num=4)
+    FREQ_MEASUREMENT_NOISE_COEFFICIENTs = [1.5, 10000.0]
 
-    # Initialize IMU objects
-    gyro = Gyro()
-    mag = Mag()
-    accel = Accel(gyro=gyro, mag=mag)
-    imu = IMU(gyro=gyro, accel=accel)
+    for PROCESS_NOISE_COEFFICIENT in PROCESS_NOISE_COEFFICIENTs:
+        for FREQ_MEASUREMENT_NOISE_COEFFICIENT in FREQ_MEASUREMENT_NOISE_COEFFICIENTs:
+            # Load the data
+            readings = Readings(IMU_fpath, GPS_fpath,
+                                start_time=start_time, duration=duration)
 
-    # Run EKF
-    timestamps, positions, velocities, orientations, wls_positions, all_positions, v_freqs, gps_timestamps, coords, accel_mags, gyro_readings = run_Kalman_filter(
-        readings, imu)
+            # Initialize IMU objects
+            gyro = Gyro()
+            mag = Mag()
+            accel = Accel(gyro=gyro, mag=mag)
+            imu = IMU(gyro=gyro, accel=accel)
 
-    # Timestamps from ms to s, remove offsets
-    timestamps -= timestamps[0]
-    timestamps /= 1000
+            # Run EKF
+            timestamps, positions, gps_positions, velocities, orientations, wls_positions, all_positions, v_freqs, gps_timestamps, coords, accel_mags, gyro_readings = run_Kalman_filter(
+                readings, imu, PROCESS_NOISE_COEFFICIENT, FREQ_MEASUREMENT_NOISE_COEFFICIENT)
 
-    # Save data
-    df = pd.DataFrame(gps_timestamps, columns=['UNIX Epoch timestamp-utc'])
-    df = pd.concat([df, pd.DataFrame(coords)], axis=1)
-    df.columns = ['UNIX Epoch timestamp-utc', 'lat', 'lon']
-    if write_csv:
-        df.to_csv(GPS_fpath.replace(
-            '.csv',
-            f'_filtered_{PROCESS_NOISE_COEFFICIENT}_{GPS_MEASUREMENT_NOISE_COEFFICIENT}_{FREQ_MEASUREMENT_NOISE_COEFFICIENT}.csv'),
-            index=False,
-            header=True)
+            # Timestamps from ms to s, remove offsets
+            timestamps -= timestamps[0]
+            timestamps /= 1000
+
+            # Save data
+            # df = pd.DataFrame(gps_timestamps, columns=['UNIX Epoch timestamp-utc'])
+            # df = pd.concat([df, pd.DataFrame(coords)], axis=1)
+            # df.columns = ['UNIX Epoch timestamp-utc', 'lat', 'lon']
+            # if write_csv:
+            #     df.to_csv(GPS_fpath.replace(
+            #         '.csv',
+            #         f'_filtered_{PROCESS_NOISE_COEFFICIENT}_{GPS_MEASUREMENT_NOISE_COEFFICIENT}_{FREQ_MEASUREMENT_NOISE_COEFFICIENT}.csv'),
+            #         index=False,
+            #         header=True)
+
+            # Save data
+            df = pd.DataFrame(gps_timestamps, columns=['UNIX Epoch timestamp-utc'])
+            df = pd.concat([df, pd.DataFrame(gps_positions)], axis=1)
+            df.columns = ['UNIX Epoch timestamp-utc', 'x', 'y']
+            if write_csv:
+                df.to_csv(GPS_fpath.replace(
+                    '.csv',
+                    f'_filtered_{PROCESS_NOISE_COEFFICIENT}_{GPS_MEASUREMENT_NOISE_COEFFICIENT}_{FREQ_MEASUREMENT_NOISE_COEFFICIENT}.csv'),
+                    index=False,
+                    header=True)
 
     # Generate colormap for time data
     c = cm.get_cmap('viridis', 12)

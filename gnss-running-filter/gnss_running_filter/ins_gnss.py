@@ -11,8 +11,8 @@ import pandas as pd
 from matplotlib import cm, colors
 import matplotlib.pyplot as plt
 
-path = 'Random'
-write_csv = True
+path = 'Lake'
+write_csv = False
 
 if path == 'Track':
     IMU_fpath = "C:\\Users\\dkolano\\OneDrive - Agile Space Industries\\Documents\\Homework\\Global Positioning Systems\\Project\\GNSS-INS_Logger\\Calibr_IMU_Log\\SM-G950U_IMU_20220223171411"
@@ -36,8 +36,8 @@ if path == 'Track':
     duration = None
 
 if path == 'Lake':
-    start_time = 1645747242435+1000
-    duration = None
+    start_time = 1645747242435+400000
+    duration = 500000
 
 if path == 'Random':
     start_time = 1645656032432+1000
@@ -346,6 +346,7 @@ def run_Kalman_filter(readings: Readings, imu: IMU, PROCESS_NOISE_COEFFICIENT: f
     # Initialize all of the saved data
     positions[0] = X[:3,0]
     gps_positions[0] = X[:2,0]
+    wls_positions[0] = positions[0]
     coords[0] = xy_2_lat_lon(positions[0][0], positions[0][1], lat0, lon0)[:, 0]
     all_positions[0] = X[:3, 0]
     velocities[0] = X[3:6,0]
@@ -407,12 +408,12 @@ def run_Kalman_filter(readings: Readings, imu: IMU, PROCESS_NOISE_COEFFICIENT: f
         v_freqs[reading_ind] = 0.0
         if reading_ind > len(accel_mag_prev):
             avg_accel = np.mean(np.sqrt(accel_mag_prev**2))
-            w = np.fft.rfft(accel_mag_prev - np.mean(accel_mag_prev))
+            w = np.fft.rfft(accel_mag_prev - np.mean(accel_mag_prev))   # Note remove DC offset
             freqs = np.fft.rfftfreq(len(accel_mag_prev), d=avg_timestep)
             w = w[freqs < 4.75]
             max_freq = freqs[np.argmax(np.abs(w))]
             if avg_accel > 12.0:
-                v_freq = 0.155*(2*max_freq)+2.6
+                v_freq = 8.130*(max_freq)+19.455
                 v_freqs[reading_ind] = v_freq
 
         X_new, Sigma_new, K = filter_GNSS(X, Sigma, R, N, accel, q, gps, v_freq, timestep, Cstop=1)
@@ -454,7 +455,7 @@ def run_Kalman_filter(readings: Readings, imu: IMU, PROCESS_NOISE_COEFFICIENT: f
 
 
 def main():
-    PROCESS_NOISE_COEFFICIENTs = [0.015, 0.0125, 0.01] #np.linspace(0.00005, 0.00075, num=4)
+    PROCESS_NOISE_COEFFICIENTs = [0.0005] #np.linspace(0.00005, 0.00075, num=4)
     FREQ_MEASUREMENT_NOISE_COEFFICIENTs = [1.5]
 
     for PROCESS_NOISE_COEFFICIENT in PROCESS_NOISE_COEFFICIENTs:
@@ -507,14 +508,14 @@ def main():
     sm.set_array([])
 
     # Plot results
-    plt.style.use('seaborn-darkgrid')
+    plt.style.use('seaborn-whitegrid')
 
     # Plot position and velocity
     plt.figure(figsize=(10, 10))
-    plt.scatter(positions[:,0], positions[:,1], marker='o', s=2, c=cmap, zorder=10, label='Inertial Navigation')
-    plt.plot(positions[:,0], positions[:,1], linewidth=1, c='k', zorder=0)
+    plt.scatter(positions[:,0], positions[:,1], marker='o', s=2, c=cmap, zorder=10, label='Filtered Position')
     plt.plot(positions[:,0], positions[:,1], linewidth=1, c='k', zorder=0)
     plt.scatter(wls_positions[:,0], wls_positions[:,1], marker='o', s=4, c='r', zorder=9, label='WLS')
+    plt.plot(wls_positions[:,0], wls_positions[:,1], linewidth=0.7, c='r', linestyle='--', zorder=0)
     plt.axis('equal')
     plt.colorbar(sm,
                  label='Time From Start [s]',
@@ -523,7 +524,7 @@ def main():
     plt.legend()
     plt.xlabel('x [m]')
     plt.ylabel('y [m]')
-    plt.title('Pure Inertial Navigation vs GPS Weighted-Least-Squares')
+    plt.title('Filtered Position vs GPS Weighted-Least-Squares')
 
     # Plot velocities
     plt.figure(figsize=(17, 10))
